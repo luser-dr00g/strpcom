@@ -1,0 +1,41 @@
+strip //comments
+line \
+continue
+// comment \
+continue
+/* nested /* comment
+*/
+"/*quoted*/"
+
+""
+
+"\""
+
+"\\"
+
+"\\\""
+
+"foo\
+bar"
+/\
+\
+\
+* comment *\
+\
+\
+/
+
+a = b /\
+\
+\
+\
+\
+c;
+
+// This is a multi-line \
+single line comment
+
+"abc\\
+""
+
+eof
