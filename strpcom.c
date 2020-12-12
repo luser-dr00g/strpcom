@@ -143,7 +143,7 @@ list strip_comments( list o ){
     do {
       tail = rest( tail );
       matched = first( tail );
-      if(  eqint( matched, '\\'  )  ) tail = rest( tail );  // eat \NL
+      //if(  eqint( matched, '\\'  )  ) tail = rest( tail );  // eat \NL
     } while(  !eqint( matched, '\n' )  );
     return  Suspension( tail, strip_comments );
   } else if(  match( multi, o, &matched, &tail )  ){
@@ -193,6 +193,6 @@ void print( list o ){
 
 int main(){
   list input = chars_from_file( stdin );
-  print( strip_comments( input ) );
-  //print( strip_comments( logical_lines( input ) ) );
+  //print( strip_comments( input ) );
+  print( strip_comments( logical_lines( input ) ) );
 }
