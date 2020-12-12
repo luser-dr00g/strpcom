@@ -1,7 +1,7 @@
 //strpcom-v5.c:
 //$ make strpcom-v5 CFLAGS='-std=c99 -Wall -pedantic -Wextra -Wno-switch'
-//#define DEBUG(...) __VA_ARGS__
-#define DEBUG(...)
+#define DEBUG(...) __VA_ARGS__
+//#define DEBUG(...)
 #define HANDLE_ROOTS(...) __VA_ARGS__
 //#define HANDLE_ROOTS(...)
 #define FINAL_GC(...) __VA_ARGS__
@@ -177,10 +177,10 @@ list strip_comments( list o ){
           fprintf(stderr,"<%c%c>", car(o)->Int.i, car(cdr(o))->Int.i); )
   if(  match( single, o, &matched, &tail )  ){
     DEBUG( fprintf( stderr, "@" ); )
-    do {
-      tail = cdr( tail );
-      matched = car( tail );
-    } while(  !eqint( matched, '\n' )  );
+    for(  matched = car( tail ), tail = cdr( tail );
+          !eqint( matched, '\n' ) && !eqint( matched, EOF );
+	  matched = car( tail ), tail = cdr( tail )  )
+      ;
     return  strip_comments( tail );
   } else if(  match( multi, o, &matched, &tail )  ){
     DEBUG( fprintf( stderr, "@" ); )
