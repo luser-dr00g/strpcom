@@ -1,41 +1,268 @@
-strip //comments
-line \
-continue
-// comment \
-continue
-/* nested /* comment
-*/
-"/*quoted*/"
+if [ $# = 0 ]; then
+  prog=./strpcom-v5
+else
+  prog=./$1
+fi
 
-""
+$prog <test1 | diff - test1.out
+$prog <test2 | diff - test2.out
+$prog <test3 | diff - test3.out
 
-"\""
+function t {
+echo -n "${2@Q}"
+echo ---
+echo -n "${2}" | $prog &>>output.$$
+out=$(<output.$$)
+rm output.$$
+if [ "${out}" != "${3}" ]; then
+  echo case $1 failed
+  echo "echo \"$2\" | $prog" != "\"$3\""
+  echo -n "$3" | xxd
+  echo -n "${out}" | xxd
+fi
+}
 
-"\\"
+t 1 "''" "''"
 
-"\\\""
+t 2 "'z'" "'z'"
 
-"foo\
-bar"
+t 3 "\"" "Unterminated literal"
+
+t 4 "'z'
+" "'z'
+"
+
+t 5 "'
+" "Unterminated literal"
+
+t 6 "'" "Unterminated literal"
+
+t 7 "'\a'
+" "'\a'
+"
+
+t 8 "'\\
+'" "'\\
+'"
+
+t 9 "'\\
+z'" "'\\
+z'"
+
+t 10 "'\\" "Unterminated literal"
+
+t 11 "'\\\\
+a'" "'\\\\
+a'"
+
+t 12 "'\\\\" "Unterminated literal"
+
+t 13 "'\\\\'" "'\\\\'"
+
+t 14 "'\\\\z'" "'\\\\z'"
+
+t 15 "'\\\\\\a'" "'\\\\\\a'"
+
+t 16 "'\\\\
+
+yyy'" "'\\\\
+
+yyy'"
+
+t 17 "'\\\\
+\\'" "'\\\\
+\\'"
+
+t 18 '""' '""'
+
+t 19 '"z"' '"z"'
+
+t 20 '"
+' "Unterminated literal"
+
+t 21 '"' "Unterminated literal"
+
+t 22 "\"\a\"" "\"\a\""
+
+t 23 "\"\\
+\"" "\"\\
+\""
+
+t 24 "\"\\
+z\"" "\"\\
+z\""
+
+t 25 "\"\\" "Unterminated literal"
+
+t 26 "\"\\\\
+a\"" "\"\\\\
+a\""
+
+t 27 "\"\\\\" "Unterminated literal"
+
+t 28 '"\\"' '"\\"'
+
+t 29 '"\\z"' '"\\z"'
+
+t 30 '"\\\a"' '"\\\a"'
+
+t 31 '"\\
+
+yyy"' '"\\
+
+yyy"'
+
+t 32 '"\\
+\"' '"\\
+\"'
+
+t 33 '/' '/'
+
+t 34 '/\' '/\'
+
+t 35 '//' ''
+
+t 36 '//\' ''
+
+t 37 '//\
+' '
+'
+
+t 38 /z /z
+
+t 39 '/\
+z' '/\
+z'
+
+t 40 '/\
+\
+z' '/\
+\
+z'
+
+t 41 '//z' ''
+
+t 42 '/\
+/z' ''
+
+t 43 '/\
+/\
+z' ''
+
+t 44 '//\\
+z' ''
+
+t 45 '//\\z' ''
+
+t 46 '/*' 'Unterminated comment'
+
+t 47 '/*\' 'Unterminated comment'
+
+t 48 '/*\
+' 'Unterminated comment'
+
+t 49 '/**' 'Unterminated comment'
+
+t 50 '/**\' 'Unterminated comment'
+
+t 51 '/**\
+' 'Unterminated comment'
+
+t 52 '/\
+*z*/' ' '
+
+t 53 '/\
+***/' ' '
+
+t 54 '/\
+*\\
+*/' ' '
+
+t 55 '/*z*/' ' '
+
+t 56 '/***\
+/' ' '
+
+t 57 '/***\*\
+/' ' '
+
+t a1 '' ''
+
+t a2 '
+' '
+'
+
+t a3 '/' '/'
+
+t a4 "\\" "\\"
+
+t a5 "\\
+\\" "\\
+\\"
+
+t a6 '\
+\
+' '\
+\
+'
+
+t a7 '\
+\
 /\
 \
 \
-* comment *\
-\
-\
-/
 
-a = b /\
+' '\
+\
+/\
 \
 \
-\
-\
-c;
 
-// This is a multi-line \
-single line comment
+'
 
-"abc\\
-""
+t a8 '\
+\
+/\
+\
+\
+/\
+a
+' '
+'
 
-eof
+t a9 '\
+\
+/\
+\
+\
+a
+' '\
+\
+/\
+\
+\
+a
+'
+
+t a10 'a/\
+\
+\
+\
+b
+' 'a/\
+\
+\
+\
+b
+'
+
+t a11 'a/\
+\
+\
+\
+/b
+' 'a
+'
+
+exit
+

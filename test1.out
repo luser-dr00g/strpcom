@@ -1,0 +1,32 @@
+strip 
+line \
+continue
+
+ 
+"/*quoted*/"
+
+""
+
+"\""
+
+"\\"
+
+"\\\""
+
+"foo\
+bar"
+ 
+
+a = b /\
+\
+\
+\
+\
+c;
+
+
+
+"abc\\
+""
+
+eof
