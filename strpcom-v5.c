@@ -32,13 +32,17 @@ typedef struct record {
 } record;
 
 
-record *allocation_list;
-object global_roots;
-
+static void     init_patterns();
+static void     cleanup();
 static list     chars_from_file( FILE *f );
 static list     logical_lines( list o );
+static list       trim_continue( list o, list tail );
 static list     restore_continues( list o );
 static list     strip_comments( list o );
+static list       single_remainder( list tail );
+static list       multi_remainder( list tail );
+static int        starts_literal( object a );
+static list       literal_val( object a, list o );
 static list     skip_quote( object q, list o );
 static list     nested_comment( list o );
 static void     print( list o, FILE *f );
@@ -58,69 +62,105 @@ static void       mark( object ob );
 static int        sweep( record **ptr );
 static record *   alloc();
 static object   new_( object a );
-static void     error( char *msg );
+static int      error( char *msg );
 
+
+record *allocation_list;
+object global_roots;
+list   slnl; // patterns
+list   single,
+       multi;
+list   starsl;
 
 int
 main( int argc, char **argv ){
+  init_patterns();
   list input = chars_from_file( argc > 1 ? fopen( argv[1], "r" )  : stdin );
-  if(  debug_level >= 2  ) fprintf( stderr, "input:\n"), print( input, stderr );
+  if(  debug_level >= 2  )
+    fprintf( stderr, "input:\n"), print( input, stderr );
 
   list logical = logical_lines( input );
-  if(  debug_level >= 2  ) fprintf( stderr, "logical:\n"), print( logical, stderr );
+  if(  debug_level >= 2  )
+    fprintf( stderr, "logical:\n"), print( logical, stderr );
 
   list stripped = strip_comments( logical );
-  if(  debug_level >= 2  ) fprintf( stderr, "stripped:\n"), print( stripped, stderr );
+  if(  debug_level >= 2  )
+    fprintf( stderr, "stripped:\n"), print( stripped, stderr );
 
   list restored = restore_continues( stripped );
-  if(  debug_level >= 2  ) fprintf( stderr, "restored:\n");
+  if(  debug_level >= 2  )
+    fprintf( stderr, "restored:\n");
 
-  print( restored, stderr );
+  print( restored, stdout ), fflush( stdout );
+  cleanup( restored );
+  input = logical = stripped = restored = NULL;
+}
 
-  if(  debug_level >= 2  ) fprintf( stderr, "@%d\n", collect( restored ) );
+void
+init_patterns(){
+  slnl   = add_global_root( cons( Int( '\\' ), one( Int( '\n' ) ) ), &slnl );
+  single = add_global_root( cons( Int( '/' ), one( Int( '/' ) ) ), &single );
+  multi  = add_global_root( cons( Int( '/' ), one( Int( '*' ) ) ), &multi  );
+  starsl = add_global_root( cons( Int( '*' ), one( Int( '/' ) ) ), &starsl ); 
+}
+
+void
+cleanup( object restored ){
   if(  debug_level  ){
+    if(  debug_level >= 2  ) fprintf( stderr, "@%d\n", collect( restored ) );
     if(  handle_roots  ){ global_roots = NULL; }
     fprintf( stderr, "@%d\n", collect( NULL ) );
-    input = logical = stripped = restored = NULL;
   }
 }
 
 list
 chars_from_file( FILE *f ){
   int c = fgetc( f );
-  return  c != EOF  ? cons( Int( c ), chars_from_file( f ) )
+  return  c != EOF  ? cons( Int( c ),
+                            chars_from_file( f ) )
                     : one( Int( c ) );
 }
+
 
 list
 logical_lines( list o ){
   if(  !o  ) return  NULL;
-  static list pat;
-  if(  !pat  )
-    pat = add_global_root( cons( Int( '\\' ), one( Int( '\n' ) ) ), &pat );
-
-  object matched, tail;
-  if(  debug_level >= 2  )
-    if( car(o)->Int.i!=EOF )
+  if(  debug_level >= 2 && car(o)->Int.i != EOF  )
       fprintf( stderr, "[%c%c]", car(o)->Int.i, car(cdr(o))->Int.i );
-  if(  match( pat, o, &matched, &tail )  ){
-    if(  debug_level >= 2  ) fprintf( stderr, "@" );
-    car( tail )->Int.continues = car( o )->Int.continues + 1;
-    return  logical_lines( tail );
-  } else {
-    object a = car( o );
-    return  cons( a, logical_lines( cdr( o ) ) );
-  }
+  object matched, tail;
+  return  match( slnl, o, &matched, &tail )  ? trim_continue( o, tail )
+       :  cons( car( o ),
+                logical_lines( cdr( o ) ) );
+}
+
+list
+trim_continue( list o, list tail ){
+  if(  debug_level >= 2  ) fprintf( stderr, "@" );
+  return  car( tail )->Int.continues = car( o )->Int.continues + 1,
+          logical_lines( tail );
 }
 
 list
 restore_continues( list o ){
   if(  !o  ) return  NULL;
+  if(  car( o )->Int.continues-->0  ){
+    return  cons( Int( '\\' ),
+                  cons( Int( '\n' ),
+			restore_continues( o ) ) );
+  }
+  return  cons( car( o ), restore_continues( cdr( o ) ) );
+}
+
+list
+restore_continues_v0( list o ){
+  if(  !o  ) return  NULL;
   object a = car( o );
   object z = cdr( o );
   object r = cons( a, restore_continues( z ) );
   while(  a->Int.continues  ){
-    r = cons( Int( '\\' ), cons( Int( '\n' ), r ) );
+    r = cons( Int( '\\' ),
+              cons( Int( '\n' ),
+                    r ) );
     --a->Int.continues;
   }
   return  r;
@@ -129,36 +169,44 @@ restore_continues( list o ){
 list
 strip_comments( list o ){
   if(  !o  ) return  NULL;
-  static list single, multi;
-  if(  !single  )
-    single = add_global_root( cons( Int('/'), one(Int('/') ) ), &single );
-  if(  !multi   )
-    multi = add_global_root( cons( Int('/'), one(Int('*') ) ), &multi );
-
-  object matched, tail;
   if(  debug_level >= 2 && car(o)->Int.i != EOF  )
       fprintf( stderr, "<%c%c>", car(o)->Int.i, car(cdr(o))->Int.i );
-  if(  match( single, o, &matched, &tail )  ){
-    if(  debug_level >= 2  ) fprintf( stderr, "@" );
-    object c;
-    for(  c = car( tail );
-          tail && ! (eqint( c, '\n' ) || eqint( c, EOF ));
-	  c = car( tail = cdr( tail ) )  )
-      ;
-    return  cons( Int( '\n' ),
-                  strip_comments( cdr( tail ) ) );
-  } else if(  match( multi, o, &matched, &tail )  ){
-    if(  debug_level >= 2  ) fprintf( stderr, "@" );
-    return  cons( Int( ' ' ),
-                  strip_comments( nested_comment( cdr( tail ) ) ) );
-  }
-
-  object a = car( o );
-  if(  eqint( a, '\'' ) || eqint( a, '"' )  )
-    return  cons( a,
-                  skip_quote( a, cdr( o ) ) );
-  return  cons( a,
+  object matched, tail;
+  object a;
+  return  match( single, o, &matched, &tail )  ? single_remainder( tail )
+       :  match( multi, o, &matched, &tail )   ? multi_remainder( tail )
+       :  starts_literal( a = car( o ) )       ? literal_val( a, cdr( o ) )
+       :  cons( a,
                 strip_comments( cdr( o ) ) );
+}
+
+list
+single_remainder( list tail ){
+  if(  debug_level >= 2  ) fprintf( stderr, "@" );
+  object c;
+  for(  c = car( tail );
+        tail && ! (eqint( c, '\n' ) || eqint( c, EOF ));
+	c = car( tail = cdr( tail ) )  )
+    ;
+  return  eqint( c, '\n' )  ? cons( Int( '\n' ), strip_comments( cdr( tail ) ) )
+       :  tail;
+}
+
+list
+multi_remainder( list tail ){
+  if(  debug_level >= 2  ) fprintf( stderr, "@" );
+  return  cons( Int( ' ' ),
+                strip_comments( nested_comment( tail ) ) );
+}
+
+int
+starts_literal( object a ){
+  return  eqint( a, '\'' ) || eqint( a, '"' );
+}
+
+list
+literal_val( object a, list o ){
+  return  cons( a, skip_quote( a, o ) );
 }
 
 list
@@ -166,29 +214,24 @@ nested_comment( list o ){
   if(  !o  ) error( "Unterminated comment\n" );
   if(  debug_level >= 2  )
     fprintf( stderr, "(%c%c)", car( o )->Int.i, car( cdr( o ) )->Int.i );
-  static list end;
-  if(  !end  )
-    end = add_global_root( cons( Int( '*' ), one( Int( '/' ) ) ), &end ); 
-
   object matched, tail;
-  if(  match( end, o, &matched, &tail )  ) return  tail;
-  if(  eqint( car( o ), EOF )  ) error( "Unterminated comment\n" );
-  return  nested_comment( cdr( o ) );
+  return  match( starsl, o, &matched, &tail )  ? tail
+       :  eqint( car( o ), EOF )               ? error( "Unterminated comment\n" ),NULL
+       :  nested_comment( cdr( o ) );
 }
 
 list
 skip_quote( object q, list o ){
   if(  !o  ) error( "Unterminated literal\n" );
   object a = car( o );
-  if(  eqint( a, '\\' )  )
-    return  cons( a,
-                  cons( car( cdr( o ) ),
-                        skip_quote( q, cdr( cdr( o ) ) ) ) );
-  else if(  eq( a, q )  )
-    return  cons( a,
-                  strip_comments( cdr( o ) ) );
-  if(  eqint( a, EOF )  ) error( "Unterminated literal\n" );
-  return  cons( a,
+  return  eqint( a, '\\' )  ? cons( a, 
+                                    cons( car( cdr( o ) ),
+                                          skip_quote( q, cdr( cdr( o ) ) ) ) )
+       :  eq( a, q )        ? cons( a,
+                                    strip_comments( cdr( o ) ) )
+       :  eqint( a, '\n' )
+       || eqint( a, EOF )   ? error( "Unterminated literal\n" ),NULL
+       :  cons( a,
                 skip_quote( q, cdr( o ) ) );
 }
 
@@ -220,21 +263,21 @@ one( object a ){
 
 object
 car( list o ){
-  return  o  && o->t == LIST  ? o->List.a  : NULL;
+  return  o && o->t == LIST  ? o->List.a  : NULL;
 }
 
 object
 cdr( list o ){
-  return  o  && o->t == LIST  ? o->List.b  : NULL;
+  return  o && o->t == LIST  ? o->List.b  : NULL;
 }
 
 int
 eq( object a, object b ){
-  return  !a && !b         ? 1                     :
-          !a || !b         ? 0                     :
-          a->t != b->t     ? 0                     :
-          a->t == INTEGER  ? a->Int.i == b->Int.i  :
-          !memcmp( a, b, sizeof *a );
+  return  !a && !b         ? 1
+       :  !a || !b         ? 0
+       :  a->t != b->t     ? 0
+       :  a->t == INTEGER  ? a->Int.i == b->Int.i
+       :  !memcmp( a, b, sizeof *a );
 }
 
 int
@@ -248,18 +291,14 @@ match( object pat, object it, object *matched, object *tail ){
   if(  !pat  ) return  *tail = it,  1;
   if(  pat->t != (it  ? it->t  : 0)  ) return  0;
   switch(  pat->t  ){
-    case LIST:
-      {
+    case LIST: {
         object sink;
-        if(  match( car( pat ), car( it ), & sink, tail )  ){
+        if(  match( car( pat ), car( it ), & sink, tail )  )
           return  *matched = it,
                   match( cdr( pat ), cdr( it ), & sink, tail );
-        } 
       } break;
     case INTEGER:
-      if(  eq( pat, it )  ){
-        return  *matched = it,  1;
-      } 
+      if(  eq( pat, it )  ) return  *matched = it,  1;
   }
   return  0;
 }
@@ -329,8 +368,9 @@ new_( object a ){
   return  p;
 }
 
-void
+int
 error( char *msg ){
   fprintf( stderr, "%s", msg );
   exit( EXIT_FAILURE );
+  return 0777;
 }

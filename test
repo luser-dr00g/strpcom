@@ -12,14 +12,16 @@ function t {
 echo -n "${2@Q}"
 echo ---
 echo -n "${2}" | $prog &>>output.$$
-out=$(<output.$$)
-rm output.$$
+out="$(cat output.$$)"
 if [ "${out}" != "${3}" ]; then
+  echo -n "${out@Q}"
+  echo ---
   echo case $1 failed
   echo "echo \"$2\" | $prog" != "\"$3\""
   echo -n "$3" | xxd
-  echo -n "${out}" | xxd
+  xxd output.$$
 fi
+rm output.$$
 }
 
 t 1 "''" "''"
@@ -125,6 +127,7 @@ t 35 '//' ''
 t 36 '//\' ''
 
 t 37 '//\
+
 ' '
 '
 
