@@ -75,7 +75,7 @@ list   starsl;
 int
 main( int argc, char **argv ){
   init_patterns();
-  list input = chars_from_file( argc > 1 ? fopen( argv[1], "r" )  : stdin );
+  list input = chars_from_file( argc > 1  ? fopen( argv[1], "r" )  : stdin );
   if(  debug_level >= 2  )
     fprintf( stderr, "input:\n"), print( input, stderr );
 
@@ -92,8 +92,7 @@ main( int argc, char **argv ){
     fprintf( stderr, "restored:\n");
 
   print( restored, stdout ), fflush( stdout );
-  cleanup( restored );
-  input = logical = stripped = restored = NULL;
+  cleanup( restored ), input = logical = stripped = restored = NULL;
 }
 
 void
@@ -118,7 +117,7 @@ chars_from_file( FILE *f ){
   int c = fgetc( f );
   return  c != EOF  ? cons( Int( c ),
                             chars_from_file( f ) )
-                    : one( Int( c ) );
+       :  one( Int( c ) );
 }
 
 
@@ -142,28 +141,13 @@ trim_continue( list o, list tail ){
 
 list
 restore_continues( list o ){
-  if(  !o  ) return  NULL;
-  if(  car( o )->Int.continues-->0  ){
-    return  cons( Int( '\\' ),
+  return  !o  ? NULL
+       :  car( o )->Int.continues-->0  ?
+            cons( Int( '\\' ),
                   cons( Int( '\n' ),
-			restore_continues( o ) ) );
-  }
-  return  cons( car( o ), restore_continues( cdr( o ) ) );
-}
-
-list
-restore_continues_v0( list o ){
-  if(  !o  ) return  NULL;
-  object a = car( o );
-  object z = cdr( o );
-  object r = cons( a, restore_continues( z ) );
-  while(  a->Int.continues  ){
-    r = cons( Int( '\\' ),
-              cons( Int( '\n' ),
-                    r ) );
-    --a->Int.continues;
-  }
-  return  r;
+                        restore_continues( o ) ) )
+       :  cons( car( o ),
+                restore_continues( cdr( o ) ) );
 }
 
 list
@@ -182,19 +166,20 @@ strip_comments( list o ){
 
 list
 single_remainder( list tail ){
-  if(  debug_level >= 2  ) fprintf( stderr, "@" );
+  if(  debug_level >= 2  ) fprintf( stderr, "@/" );
   object c;
   for(  c = car( tail );
         tail && ! (eqint( c, '\n' ) || eqint( c, EOF ));
 	c = car( tail = cdr( tail ) )  )
     ;
-  return  eqint( c, '\n' )  ? cons( Int( '\n' ), strip_comments( cdr( tail ) ) )
+  return  eqint( c, '\n' )  ? cons( Int( '\n' ),
+                                    strip_comments( cdr( tail ) ) )
        :  tail;
 }
 
 list
 multi_remainder( list tail ){
-  if(  debug_level >= 2  ) fprintf( stderr, "@" );
+  if(  debug_level >= 2  ) fprintf( stderr, "@*" );
   return  cons( Int( ' ' ),
                 strip_comments( nested_comment( tail ) ) );
 }
@@ -206,7 +191,8 @@ starts_literal( object a ){
 
 list
 literal_val( object a, list o ){
-  return  cons( a, skip_quote( a, o ) );
+  return  cons( a,
+                skip_quote( a, o ) );
 }
 
 list
